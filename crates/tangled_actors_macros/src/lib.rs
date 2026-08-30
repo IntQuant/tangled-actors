@@ -72,7 +72,7 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 };
 
                 messages.push(quote! {
-                    #name {#(#inputs),* #comma __eidos_actor_return_type: ::eidos_actors::ReturnChannelSender<#return_type_name>}
+                    #name {#(#inputs),* #comma __eidos_actor_return_type: ::tangled_actors::ReturnChannelSender<#return_type_name>}
                 });
                 let maybe_await = sig.asyncness.map(|_| quote! {.await});
                 calls.push(quote! {
@@ -89,11 +89,11 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 helper_calls.push(
                     quote! {
                         #(#doc_attrs)*
-                        #visibility fn #fn_name(&self, #(#inputs),*) -> impl Future<Output=Result<#return_type_name, ::eidos_actors::ActorClosed>> {
-                            let (__eidos_actor_sender, __eidos_actor_receiver) = ::eidos_actors::oneshot_channel();
+                        #visibility fn #fn_name(&self, #(#inputs),*) -> impl Future<Output=Result<#return_type_name, ::tangled_actors::ActorClosed>> {
+                            let (__eidos_actor_sender, __eidos_actor_receiver) = ::tangled_actors::oneshot_channel();
                             let msg =#messages_name::#name {#(#call_inputs),* #comma __eidos_actor_return_type: __eidos_actor_sender};
                             let send_res = self.0.send(msg);
-                            async {send_res?; __eidos_actor_receiver.await.map_err(|_| ::eidos_actors::ActorClosed)}
+                            async {send_res?; __eidos_actor_receiver.await.map_err(|_| ::tangled_actors::ActorClosed)}
                         }
                     }
                 )
@@ -112,7 +112,7 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
             #(#messages),*
         }
         // Message handler
-        impl ::eidos_actors::Actor for #orig_impl_type {
+        impl ::tangled_actors::Actor for #orig_impl_type {
             type Message = #messages_name;
             type Link = #helper_name;
             async fn process_message(&mut self, message: Self::Message) {
@@ -123,10 +123,10 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
         }
         // Helper
         #[derive(Clone)]
-        pub struct #helper_name(::eidos_actors::ActorLink<#orig_impl_type>);
+        pub struct #helper_name(::tangled_actors::ActorLink<#orig_impl_type>);
 
-        impl From<::eidos_actors::ActorLink<#orig_impl_type>> for #helper_name {
-            fn from(link: ::eidos_actors::ActorLink<#orig_impl_type>) -> Self {
+        impl From<::tangled_actors::ActorLink<#orig_impl_type>> for #helper_name {
+            fn from(link: ::tangled_actors::ActorLink<#orig_impl_type>) -> Self {
                 Self(link)
             }
         }

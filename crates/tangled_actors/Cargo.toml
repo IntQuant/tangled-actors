@@ -1,10 +1,10 @@
 [package]
-name = "eidos_actors"
+name = "tangled_actors"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-eidos_actors_macros = {path = "../eidos_actors_macros"}
+tangled_actors_macros = {path = "../tangled_actors_macros"}
 thiserror = "2.0.20"
 tokio = {version="1.53.1", features=["sync", "rt"]}
 tracing = "0.1.44"

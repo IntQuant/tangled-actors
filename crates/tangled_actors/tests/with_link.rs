@@ -1,6 +1,6 @@
 use std::{mem, time::Duration};
 
-use eidos_actors::{Actor, WeakLink, make_actor};
+use tangled_actors::{Actor, WeakLink, make_actor};
 
 struct TestActor {
     link: WeakLink<Self>,

@@ -1,6 +1,6 @@
-//! # eidos_actors
+//! # tangled_actors
 //!
-//! `eidos_actors` provides a lightweight, macro-driven actor system built on top of `tokio`.
+//! `tangled_actors` is yet another actor crate with excessive use of macros.
 //!
 //! This crate simplifies the actor pattern by allowing you to define actor behavior using
 //! standard Rust `impl` blocks on actor state struct. A procedural macro `#[make_actor]` generates a private enum containing message types accepted by the actor and
@@ -11,7 +11,7 @@
 //! ## Example
 //!
 //! ```rust
-//! use eidos_actors::{Actor, make_actor};
+//! use tangled_actors::{Actor, make_actor};
 //!
 //! struct Counter {
 //!     count: u32,
@@ -46,7 +46,7 @@
 //! - [`Actor`]: The trait that defines the actor's message type and link type.
 //! - [`ActorClosed`]: Error returned when the actor task has terminated.
 
-pub use eidos_actors_macros::make_actor;
+pub use tangled_actors_macros::make_actor;
 use tokio::{
     sync::{mpsc, oneshot},
     task::JoinHandle,

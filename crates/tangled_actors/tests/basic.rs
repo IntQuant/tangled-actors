@@ -1,12 +1,12 @@
 use std::mem;
 
-use eidos_actors::{Actor, make_actor};
+use tangled_actors::{Actor, make_actor};
 
 struct TestActor;
 
 #[make_actor]
 impl TestActor {
-    async fn do_things(&self, _arg: u32) -> eyre::Result<u32> {
+    fn do_things(&self, _arg: u32) -> eyre::Result<u32> {
         Ok(42)
     }
 }

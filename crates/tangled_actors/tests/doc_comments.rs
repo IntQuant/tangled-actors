@@ -1,4 +1,4 @@
-use eidos_actors::{Actor, make_actor};
+use tangled_actors::{Actor, make_actor};
 
 struct DocActor;
 
