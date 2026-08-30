@@ -13,7 +13,7 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
         _ => todo!(),
     };
 
-    let messages_name = format_ident!("{}__EidosActorsMessages", orig_name);
+    let messages_name = format_ident!("{}__TangledActorsMessages", orig_name);
     let helper_name = format_ident!("{}Link", orig_name);
 
     assert!(
@@ -72,13 +72,13 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 };
 
                 messages.push(quote! {
-                    #name {#(#inputs),* #comma __eidos_actor_return_type: ::tangled_actors::ReturnChannelSender<#return_type_name>}
+                    #name {#(#inputs),* #comma __tangled_actor_return: ::tangled_actors::ReturnChannelSender<#return_type_name>}
                 });
                 let maybe_await = sig.asyncness.map(|_| quote! {.await});
                 calls.push(quote! {
-                    Self::Message::#name {#(#call_inputs),* #comma __eidos_actor_return_type} => {
+                    Self::Message::#name {#(#call_inputs),* #comma __tangled_actor_return} => {
                         let res = self.#fn_name(#(#call_inputs),*)#maybe_await;
-                        let _ = __eidos_actor_return_type.send(res);
+                        let _ = __tangled_actor_return.send(res);
                     }
                 });
                 let visibility = &impl_item_fn.vis;
@@ -90,10 +90,10 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     quote! {
                         #(#doc_attrs)*
                         #visibility fn #fn_name(&self, #(#inputs),*) -> impl Future<Output=Result<#return_type_name, ::tangled_actors::ActorClosed>> {
-                            let (__eidos_actor_sender, __eidos_actor_receiver) = ::tangled_actors::oneshot_channel();
-                            let msg =#messages_name::#name {#(#call_inputs),* #comma __eidos_actor_return_type: __eidos_actor_sender};
+                            let (__actor_sender, __actor_receiver) = ::tangled_actors::oneshot_channel();
+                            let msg =#messages_name::#name {#(#call_inputs),* #comma __tangled_actor_return: __actor_sender};
                             let send_res = self.0.send(msg);
-                            async {send_res?; __eidos_actor_receiver.await.map_err(|_| ::tangled_actors::ActorClosed)}
+                            async {send_res?; __actor_receiver.await.map_err(|_| ::tangled_actors::ActorClosed)}
                         }
                     }
                 )
