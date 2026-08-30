@@ -8,6 +8,10 @@ tangled_actors_macros = {path = "../tangled_actors_macros"}
 thiserror = "2.0.20"
 tokio = {version="1.53.1", features=["sync", "rt"]}
 tracing = "0.1.44"
+eframe = { version = "0.36.1", optional = true }
+
+[features]
+eframe = ["dep:eframe"]
 
 [dev-dependencies]
 eyre = "0.6.12"

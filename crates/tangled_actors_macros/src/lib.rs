@@ -25,6 +25,7 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let mut messages = vec![];
     let mut calls = vec![];
     let mut helper_calls = vec![];
+    let mut any_async_handlers = false;
 
     for item in &orig_item_impl.items {
         match item {
@@ -81,6 +82,9 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
                         let _ = __tangled_actor_return.send(res);
                     }
                 });
+                if sig.asyncness.is_some() {
+                    any_async_handlers = true;
+                }
                 let visibility = &impl_item_fn.vis;
                 let doc_attrs = impl_item_fn
                     .attrs
@@ -104,6 +108,16 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let orig_impl_type = &orig_item_impl.self_ty;
 
+    let sync_message_handler = (!any_async_handlers).then_some(quote! {
+        impl ::tangled_actors::ActorSync for #orig_impl_type {
+            fn process_message_sync(&mut self, message: Self::Message) {
+                match message {
+                    #(#calls),*
+                }
+            }
+        }
+    });
+
     TokenStream::from(quote!(
         // Messages enum
         #[expect(non_camel_case_types)]
@@ -121,6 +135,7 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
                 }
             }
         }
+        #sync_message_handler
         // Helper
         #[derive(Clone)]
         pub struct #helper_name(::tangled_actors::ActorLink<#orig_impl_type>);

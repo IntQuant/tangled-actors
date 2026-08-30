@@ -1,16 +1,16 @@
 use std::{mem, time::Duration};
 
-use tangled_actors::{Actor, WeakLink, make_actor};
+use tangled_actors::{Actor, ActorCtx, make_actor};
 
 struct TestActor {
-    link: WeakLink<Self>,
+    ctx: ActorCtx<Self>,
     ret: u32,
 }
 
 #[make_actor]
 impl TestActor {
     fn do_things(&self, _arg: u32) -> eyre::Result<u32> {
-        let link = self.link.upgrade().unwrap();
+        let link = self.ctx.link();
         tokio::spawn(async move {
             link.update_ret().await.unwrap();
         });
@@ -26,7 +26,7 @@ impl TestActor {
 
 #[tokio::test]
 async fn main() -> eyre::Result<()> {
-    let (actor_link, handle) = Actor::spawn(|link| TestActor { link, ret: 0 });
+    let (actor_link, handle) = Actor::spawn(|ctx| TestActor { ctx, ret: 0 });
     assert_eq!(actor_link.do_things(32).await??, 42);
     tokio::time::sleep(Duration::from_millis(10)).await;
     let _ = actor_link.check_ret().await;

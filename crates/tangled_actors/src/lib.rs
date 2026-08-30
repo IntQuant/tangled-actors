@@ -52,6 +52,9 @@ use tokio::{
     task::JoinHandle,
 };
 
+#[cfg(feature = "eframe")]
+pub mod eframe;
+
 /// Macro internal
 pub type ReturnChannelSender<T> = oneshot::Sender<T>;
 
@@ -92,6 +95,17 @@ impl<T: Actor> From<&ActorLink<T>> for WeakLink<T> {
     }
 }
 
+pub struct ActorCtx<A: Actor> {
+    pub weak_link: WeakLink<A>,
+}
+
+impl<A: Actor> ActorCtx<A> {
+    // TODO make a special type of link that's guaranteed to stay open while actor is alive.
+    pub fn link(&self) -> A::Link {
+        self.weak_link.upgrade().expect("actor to still be alive")
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("actor is no longer accepting messages")]
 pub struct ActorClosed;
@@ -108,17 +122,15 @@ pub trait Actor: Sized + Send + 'static {
     type Link: From<ActorLink<Self>> + Clone + Send;
     /// Spawn an actor task, returning a link object that allows sending messages to this actor.
     fn spawn(
-        builder: impl FnOnce(WeakLink<Self>) -> Self + Send + 'static,
+        builder: impl FnOnce(ActorCtx<Self>) -> Self + Send + 'static,
     ) -> (Self::Link, JoinHandle<()>) {
         let (sender, mut r) = mpsc::unbounded_channel();
         let link = ActorLink { sender };
         let weak_link = WeakLink::from(&link);
         let task_handle = tokio::spawn({
             async move {
-                let mut actor = builder(weak_link);
-                // let actor_name = type_name::<Self>();
+                let mut actor = builder(ActorCtx { weak_link });
                 while let Some(msg) = r.recv().await {
-                    // let _span = span!(Level::TRACE, "actor", actor_name).entered();
                     actor.process_message(msg).await;
                 }
             }
@@ -130,4 +142,8 @@ pub trait Actor: Sized + Send + 'static {
         &mut self,
         message: Self::Message,
     ) -> impl std::future::Future<Output = ()> + Send;
+}
+
+pub trait ActorSync: Actor {
+    fn process_message_sync(&mut self, message: Self::Message);
 }
