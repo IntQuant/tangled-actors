@@ -1,7 +1,76 @@
 use heck::ToUpperCamelCase;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{Ident, ItemImpl, parse_macro_input};
+use syn::{FnArg, Ident, ItemImpl, Pat, parse_macro_input};
+
+#[derive(Default)]
+struct ActorMakerState {
+    message_variants: Vec<proc_macro2::TokenStream>,
+    dispatches: Vec<proc_macro2::TokenStream>,
+    helper_calls: Vec<proc_macro2::TokenStream>,
+}
+
+impl ActorMakerState {
+    /// Generate message variant that will be used in per actor Messages struct.
+    fn add_message_variant(
+        &mut self,
+        name: &Ident,
+        inputs: &[&FnArg],
+        return_type_name: &proc_macro2::TokenStream,
+    ) {
+        let comma = (!inputs.is_empty()).then_some(quote! { , });
+
+        self.message_variants.push(quote! {
+            #name {#(#inputs),* #comma __tangled_actor_return: ::tangled_actors::ReturnChannelSender<#return_type_name>}
+        });
+    }
+
+    fn add_dispatch(
+        &mut self,
+        name: &Ident,
+        fn_name: &Ident,
+        call_inputs: &[&Box<Pat>],
+        is_async: bool,
+    ) {
+        let comma = (!call_inputs.is_empty()).then_some(quote! { , });
+        let maybe_await = is_async.then_some(quote! {.await});
+        self.dispatches.push(quote! {
+            Self::Message::#name {#(#call_inputs),* #comma __tangled_actor_return} => {
+                let res = self.#fn_name(#(#call_inputs),*)#maybe_await;
+                let _ = __tangled_actor_return.send(res);
+            }
+        });
+    }
+
+    fn add_helper_call(
+        &mut self,
+        impl_item_fn: &syn::ImplItemFn,
+        messages_name: &Ident,
+        name: &Ident,
+        call_inputs: &[&Box<Pat>],
+        fn_name: &Ident,
+        inputs: &[&FnArg],
+        return_type_name: &proc_macro2::TokenStream,
+    ) {
+        let visibility = &impl_item_fn.vis;
+        let doc_attrs = impl_item_fn
+            .attrs
+            .iter()
+            .filter(|attr| attr.path().is_ident("doc"));
+        let comma = (!call_inputs.is_empty()).then_some(quote! { , });
+        self.helper_calls.push(
+            quote! {
+                #(#doc_attrs)*
+                #visibility fn #fn_name(&self, #(#inputs),*) -> impl Future<Output=Result<#return_type_name, ::tangled_actors::ActorClosed>> {
+                    let (__actor_sender, __actor_receiver) = ::tangled_actors::oneshot_channel();
+                    let msg =#messages_name::#name {#(#call_inputs),* #comma __tangled_actor_return: __actor_sender};
+                    let send_res = self.0.send(msg);
+                    async {send_res?; __actor_receiver.await.map_err(|_| ::tangled_actors::ActorClosed)}
+                }
+            }
+        )
+    }
+}
 
 #[proc_macro_attribute]
 pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
@@ -21,10 +90,8 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
         "Macro doesn't support trait impl for now"
     );
 
-    // Add support for taking in other message types from traits
-    let mut messages = vec![];
-    let mut calls = vec![];
-    let mut helper_calls = vec![];
+    // TODO: Add support for taking in other message types from traits
+    let mut state = ActorMakerState::default();
     let mut any_async_handlers = false;
 
     for item in &orig_item_impl.items {
@@ -66,41 +133,21 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     syn::ReturnType::Type(_, return_type_name) => quote! {#return_type_name},
                 };
 
-                let comma = if inputs.is_empty() {
-                    quote! {}
-                } else {
-                    quote! { , }
-                };
+                state.add_message_variant(&name, inputs, &return_type_name);
+                state.add_dispatch(&name, &fn_name, &call_inputs, sig.asyncness.is_some());
+                state.add_helper_call(
+                    &impl_item_fn,
+                    &messages_name,
+                    &name,
+                    &call_inputs,
+                    &fn_name,
+                    &inputs,
+                    &return_type_name,
+                );
 
-                messages.push(quote! {
-                    #name {#(#inputs),* #comma __tangled_actor_return: ::tangled_actors::ReturnChannelSender<#return_type_name>}
-                });
-                let maybe_await = sig.asyncness.map(|_| quote! {.await});
-                calls.push(quote! {
-                    Self::Message::#name {#(#call_inputs),* #comma __tangled_actor_return} => {
-                        let res = self.#fn_name(#(#call_inputs),*)#maybe_await;
-                        let _ = __tangled_actor_return.send(res);
-                    }
-                });
                 if sig.asyncness.is_some() {
                     any_async_handlers = true;
                 }
-                let visibility = &impl_item_fn.vis;
-                let doc_attrs = impl_item_fn
-                    .attrs
-                    .iter()
-                    .filter(|attr| attr.path().is_ident("doc"));
-                helper_calls.push(
-                    quote! {
-                        #(#doc_attrs)*
-                        #visibility fn #fn_name(&self, #(#inputs),*) -> impl Future<Output=Result<#return_type_name, ::tangled_actors::ActorClosed>> {
-                            let (__actor_sender, __actor_receiver) = ::tangled_actors::oneshot_channel();
-                            let msg =#messages_name::#name {#(#call_inputs),* #comma __tangled_actor_return: __actor_sender};
-                            let send_res = self.0.send(msg);
-                            async {send_res?; __actor_receiver.await.map_err(|_| ::tangled_actors::ActorClosed)}
-                        }
-                    }
-                )
             }
             _ => {}
         }
@@ -108,11 +155,15 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let orig_impl_type = &orig_item_impl.self_ty;
 
+    let messages = state.message_variants;
+    let dispatches = state.dispatches;
+    let helper_calls = state.helper_calls;
+
     let sync_message_handler = (!any_async_handlers).then_some(quote! {
         impl ::tangled_actors::ActorSync for #orig_impl_type {
             fn process_message_sync(&mut self, message: Self::Message) {
                 match message {
-                    #(#calls),*
+                    #(#dispatches),*
                 }
             }
         }
@@ -131,7 +182,7 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
             type Link = #helper_name;
             async fn process_message(&mut self, message: Self::Message) {
                 match message {
-                    #(#calls),*
+                    #(#dispatches),*
                 }
             }
         }
