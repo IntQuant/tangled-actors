@@ -1,7 +1,7 @@
 use heck::ToUpperCamelCase;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
-use syn::{FnArg, Ident, ItemImpl, Pat, parse_macro_input};
+use syn::{Error, FnArg, Ident, ItemImpl, Pat, ReceiverKind, parse_macro_input};
 
 #[derive(Default)]
 struct ActorMakerState {
@@ -108,10 +108,29 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     .iter()
                     .find(|item| matches!(item, syn::FnArg::Receiver(..)));
                 match receiver {
-                    Some(_) => {
-                        // TODO: only allow &self and &mut self in receivers
+                    Some(FnArg::Receiver(rec)) => {
+                        if matches!(rec.kind, ReceiverKind::Value) {
+                            return Error::new_spanned(
+                                rec,
+                                "can't receive function type by value. Use &self or &mut self instead",
+                            )
+                            .into_compile_error()
+                            .into();
+                        }
                     }
-                    None => panic!("function needs to have a receiver"),
+                    Some(FnArg::Typed(rec)) => {
+                        return Error::new_spanned(
+                            rec,
+                            "typed receivers are not supported. Use &self or &mut self instead",
+                        )
+                        .into_compile_error()
+                        .into();
+                    }
+                    None => {
+                        return Error::new_spanned(sig, "function needs to have a receiver")
+                            .into_compile_error()
+                            .into();
+                    }
                 }
 
                 let inputs = &sig
