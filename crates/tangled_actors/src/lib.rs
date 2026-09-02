@@ -9,6 +9,9 @@ use tokio::{
 
 #[cfg(feature = "eframe")]
 pub mod eframe;
+mod link;
+
+pub use link::*;
 
 /// Macro internal
 #[doc(hidden)]
@@ -18,42 +21,6 @@ pub type ReturnChannelSender<T> = oneshot::Sender<T>;
 #[doc(hidden)]
 pub fn oneshot_channel<T>() -> (ReturnChannelSender<T>, oneshot::Receiver<T>) {
     oneshot::channel()
-}
-
-/// Generic "actor link" type. Normally you're gonna use the generated helper struct (nameable with `<actor name>Link` or with trait's associated type [`Actor::Link`])
-pub struct ActorLink<T: Actor> {
-    sender: mpsc::UnboundedSender<T::Message>,
-}
-
-impl<T: Actor> Clone for ActorLink<T> {
-    fn clone(&self) -> Self {
-        Self {
-            sender: self.sender.clone(),
-        }
-    }
-}
-
-/// Weak version of ActorLink. Does not keep actor it points at alive.
-///
-/// Can be constructed from any actor link using [`From`] trait.
-pub struct WeakLink<T: Actor> {
-    sender: mpsc::WeakUnboundedSender<T::Message>,
-}
-
-impl<T: Actor> WeakLink<T> {
-    pub fn upgrade(&self) -> Option<T::Link> {
-        self.sender
-            .upgrade()
-            .map(|sender| ActorLink { sender }.into())
-    }
-}
-
-impl<T: Actor> From<&ActorLink<T>> for WeakLink<T> {
-    fn from(value: &ActorLink<T>) -> Self {
-        Self {
-            sender: value.sender.downgrade(),
-        }
-    }
 }
 
 /// Actor context. Passed to the actor on creation, can be used by the actor to get link to itself.
@@ -72,13 +39,6 @@ impl<A: Actor> ActorCtx<A> {
 #[derive(Debug, thiserror::Error)]
 #[error("actor is no longer accepting messages")]
 pub struct ActorClosed;
-
-impl<T: Actor> ActorLink<T> {
-    pub fn send(&self, msg: T::Message) -> Result<(), ActorClosed> {
-        self.sender.send(msg).map_err(|_| ActorClosed)
-    }
-    // TODO: support backpressure
-}
 
 /// Main trait implemented by actors.
 pub trait Actor: Sized + Send + 'static {
