@@ -3,6 +3,14 @@ use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::{Error, FnArg, Ident, ItemImpl, Pat, ReceiverKind, parse_macro_input};
 
+struct PerMessageCtx<'a> {
+    variant_name: &'a Ident,
+    inputs: &'a Vec<&'a FnArg>,
+    return_type_name: proc_macro2::TokenStream,
+    fn_name: &'a Ident,
+    call_inputs: Vec<&'a Box<Pat>>,
+}
+
 struct ActorMakerState {
     message_variants: Vec<proc_macro2::TokenStream>,
     dispatches: Vec<proc_macro2::TokenStream>,
@@ -13,12 +21,10 @@ struct ActorMakerState {
 
 impl ActorMakerState {
     /// Generate message variant that will be used in per actor Messages struct.
-    fn add_message_variant(
-        &mut self,
-        name: &Ident,
-        inputs: &[&FnArg],
-        return_type_name: &proc_macro2::TokenStream,
-    ) {
+    fn add_message_variant(&mut self, ctx: &PerMessageCtx) {
+        let name = ctx.variant_name;
+        let inputs = ctx.inputs;
+        let return_type_name = &ctx.return_type_name;
         let comma = (!inputs.is_empty()).then_some(quote! { , });
 
         self.message_variants.push(quote! {
@@ -26,13 +32,10 @@ impl ActorMakerState {
         });
     }
 
-    fn add_dispatch(
-        &mut self,
-        variant_name: &Ident,
-        fn_name: &Ident,
-        call_inputs: &[&Box<Pat>],
-        is_async: bool,
-    ) {
+    fn add_dispatch(&mut self, ctx: &PerMessageCtx, is_async: bool) {
+        let call_inputs = &ctx.call_inputs;
+        let variant_name = &ctx.variant_name;
+        let fn_name = ctx.fn_name;
         let comma = (!call_inputs.is_empty()).then_some(quote! { , });
         let maybe_await = is_async.then_some(quote! {.await});
         self.dispatches.push(quote! {
@@ -43,15 +46,14 @@ impl ActorMakerState {
         });
     }
 
-    fn add_helper_call(
-        &mut self,
-        impl_item_fn: &syn::ImplItemFn,
-        variant_name: &Ident,
-        call_inputs: &[&Box<Pat>],
-        fn_name: &Ident,
-        inputs: &[&FnArg],
-        return_type_name: &proc_macro2::TokenStream,
-    ) {
+    fn add_helper_call(&mut self, ctx: &PerMessageCtx, impl_item_fn: &syn::ImplItemFn) {
+        let PerMessageCtx {
+            variant_name,
+            inputs,
+            return_type_name,
+            fn_name,
+            call_inputs,
+        } = ctx;
         let messages_name = &self.messages_name;
         let visibility = &impl_item_fn.vis;
         let doc_attrs = impl_item_fn
@@ -160,21 +162,17 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
                     syn::ReturnType::Type(_, return_type_name) => quote! {#return_type_name},
                 };
 
-                state.add_message_variant(&variant_name, inputs, &return_type_name);
-                state.add_dispatch(
-                    &variant_name,
-                    &fn_name,
-                    &call_inputs,
-                    sig.asyncness.is_some(),
-                );
-                state.add_helper_call(
-                    &impl_item_fn,
-                    &variant_name,
-                    &call_inputs,
-                    &fn_name,
-                    &inputs,
-                    &return_type_name,
-                );
+                let ctx = PerMessageCtx {
+                    variant_name: &variant_name,
+                    inputs,
+                    return_type_name,
+                    fn_name,
+                    call_inputs,
+                };
+
+                state.add_message_variant(&ctx);
+                state.add_dispatch(&ctx, sig.asyncness.is_some());
+                state.add_helper_call(&ctx, impl_item_fn);
 
                 if sig.asyncness.is_some() {
                     any_async_handlers = true;
