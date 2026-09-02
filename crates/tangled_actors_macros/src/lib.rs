@@ -80,11 +80,16 @@ impl PerMessageCtx<'_> {
 }
 
 struct ActorMakerState {
-    message_variants: Vec<proc_macro2::TokenStream>,
-    dispatches: Vec<proc_macro2::TokenStream>,
-    helper_calls: Vec<proc_macro2::TokenStream>,
+    /// Identifier of generated actor messages enum.
     messages_name: Ident,
-    helper_name: Ident,
+    /// Identifier of generated "actor link" type, which wraps generic `ActorLink<A>`
+    /// and contains helper names that emit actor messages.
+    link_helper_name: Ident,
+    /// Calls that are added to the generated "actor link" type.
+    helper_calls: Vec<proc_macro2::TokenStream>,
+    message_variants: Vec<proc_macro2::TokenStream>,
+    /// Contains match arms that call original actor function based on message variant.
+    dispatches: Vec<proc_macro2::TokenStream>,
 }
 
 impl ActorMakerState {
@@ -154,7 +159,7 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
     };
 
     let messages_name = format_ident!("{}__TangledActorsMessages", orig_name);
-    let helper_name = format_ident!("{}Link", orig_name);
+    let link_helper_name = format_ident!("{}Link", orig_name);
 
     assert!(
         orig_item_impl.trait_.is_none(),
@@ -164,7 +169,7 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
     // TODO: Add support for taking in other message types from traits
     let mut state = ActorMakerState {
         messages_name,
-        helper_name,
+        link_helper_name,
         message_variants: vec![],
         dispatches: vec![],
         helper_calls: vec![],
@@ -198,7 +203,7 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
         dispatches,
         helper_calls,
         messages_name,
-        helper_name,
+        link_helper_name,
     } = state;
 
     let sync_message_handler = (!any_async_handlers).then_some(quote! {
@@ -221,7 +226,7 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
         // Message handler
         impl ::tangled_actors::Actor for #orig_impl_type {
             type Message = #messages_name;
-            type Link = #helper_name;
+            type Link = #link_helper_name;
             async fn process_message(&mut self, message: Self::Message) {
                 match message {
                     #(#dispatches),*
@@ -231,15 +236,15 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
         #sync_message_handler
         // Helper
         #[derive(Clone)]
-        pub struct #helper_name(::tangled_actors::ActorLink<#orig_impl_type>);
+        pub struct #link_helper_name(::tangled_actors::ActorLink<#orig_impl_type>);
 
-        impl From<::tangled_actors::ActorLink<#orig_impl_type>> for #helper_name {
+        impl From<::tangled_actors::ActorLink<#orig_impl_type>> for #link_helper_name {
             fn from(link: ::tangled_actors::ActorLink<#orig_impl_type>) -> Self {
                 Self(link)
             }
         }
 
-        impl #helper_name {
+        impl #link_helper_name {
             #(#helper_calls)*
         }
 
