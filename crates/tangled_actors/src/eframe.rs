@@ -34,10 +34,7 @@ pub struct ActorApp<A: Actor> {
 }
 
 impl<A: ActorSync + eframe::App> ActorApp<A> {
-    pub fn new(
-        cc: &eframe::CreationContext,
-        inner_builder: impl FnOnce(ActorCtx<A>) -> A + Send + 'static,
-    ) -> Self {
+    pub fn new(cc: &eframe::CreationContext, inner_builder: impl FnOnce(ActorCtx<A>) -> A) -> Self {
         let waker = Waker::from(EguiWaker::new(&cc.egui_ctx));
 
         let (sender, receiver) = mpsc::unbounded_channel();
