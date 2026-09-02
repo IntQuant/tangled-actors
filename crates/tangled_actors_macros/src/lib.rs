@@ -4,11 +4,79 @@ use quote::{format_ident, quote};
 use syn::{Error, FnArg, Ident, ItemImpl, Pat, ReceiverKind, parse_macro_input};
 
 struct PerMessageCtx<'a> {
-    variant_name: &'a Ident,
-    inputs: &'a Vec<&'a FnArg>,
-    return_type_name: proc_macro2::TokenStream,
+    /// Name of source function.
     fn_name: &'a Ident,
-    call_inputs: Vec<&'a Box<Pat>>,
+    /// Name of a message variant. Same as [`PerMessageCtx::fn_name`] but in CamelCase.
+    variant_name: Ident,
+    /// Arguments of a function/message. Does not include self receiver.
+    inputs: Vec<&'a FnArg>,
+    /// Same as [`PerMessageCtx::inputs`], but only includes type names.
+    inputs_types: Vec<&'a Box<Pat>>,
+    /// Return type of source function.
+    return_type_name: proc_macro2::TokenStream,
+}
+
+impl PerMessageCtx<'_> {
+    fn from_impl_item_fn(impl_item_fn: &syn::ImplItemFn) -> Result<PerMessageCtx<'_>, TokenStream> {
+        let sig = &impl_item_fn.sig;
+        let fn_name = &sig.ident;
+        let variant_name = Ident::new(
+            &sig.ident.to_string().to_upper_camel_case(),
+            sig.ident.span(),
+        );
+        let receiver = &sig
+            .inputs
+            .iter()
+            .find(|item| matches!(item, syn::FnArg::Receiver(..)));
+        match receiver {
+            Some(FnArg::Receiver(rec)) => {
+                if matches!(rec.kind, ReceiverKind::Value) {
+                    return Err(Error::new_spanned(
+                        rec,
+                        "can't receive function type by value. Use &self or &mut self instead",
+                    )
+                    .into_compile_error()
+                    .into());
+                }
+            }
+            Some(FnArg::Typed(rec)) => {
+                return Err(Error::new_spanned(
+                    rec,
+                    "typed receivers are not supported. Use &self or &mut self instead",
+                )
+                .into_compile_error()
+                .into());
+            }
+            None => {
+                return Err(Error::new_spanned(sig, "function needs to have a receiver")
+                    .into_compile_error()
+                    .into());
+            }
+        }
+        let inputs = sig
+            .inputs
+            .iter()
+            .filter(|item| !matches!(item, syn::FnArg::Receiver(..)))
+            .collect::<Vec<_>>();
+        let inputs_types = inputs
+            .iter()
+            .map(|arg| match arg {
+                syn::FnArg::Receiver(_receiver) => unreachable!(),
+                syn::FnArg::Typed(pat_type) => &pat_type.pat,
+            })
+            .collect::<Vec<_>>();
+        let return_type_name = match &sig.output {
+            syn::ReturnType::Default => quote! {()},
+            syn::ReturnType::Type(_, return_type_name) => quote! {#return_type_name},
+        };
+        Ok(PerMessageCtx {
+            variant_name,
+            inputs,
+            return_type_name,
+            fn_name,
+            inputs_types,
+        })
+    }
 }
 
 struct ActorMakerState {
@@ -22,8 +90,8 @@ struct ActorMakerState {
 impl ActorMakerState {
     /// Generate message variant that will be used in per actor Messages struct.
     fn add_message_variant(&mut self, ctx: &PerMessageCtx) {
-        let name = ctx.variant_name;
-        let inputs = ctx.inputs;
+        let name = &ctx.variant_name;
+        let inputs = &ctx.inputs;
         let return_type_name = &ctx.return_type_name;
         let comma = (!inputs.is_empty()).then_some(quote! { , });
 
@@ -33,7 +101,7 @@ impl ActorMakerState {
     }
 
     fn add_dispatch(&mut self, ctx: &PerMessageCtx, is_async: bool) {
-        let call_inputs = &ctx.call_inputs;
+        let call_inputs = &ctx.inputs_types;
         let variant_name = &ctx.variant_name;
         let fn_name = ctx.fn_name;
         let comma = (!call_inputs.is_empty()).then_some(quote! { , });
@@ -52,7 +120,7 @@ impl ActorMakerState {
             inputs,
             return_type_name,
             fn_name,
-            call_inputs,
+            inputs_types: call_inputs,
         } = ctx;
         let messages_name = &self.messages_name;
         let visibility = &impl_item_fn.vis;
@@ -106,75 +174,16 @@ pub fn make_actor(_attr: TokenStream, item: TokenStream) -> TokenStream {
     for item in &orig_item_impl.items {
         match item {
             syn::ImplItem::Fn(impl_item_fn) => {
-                let sig = &impl_item_fn.sig;
-                let fn_name = &sig.ident;
-                // Name of a message variant
-                let variant_name = Ident::new(
-                    &sig.ident.to_string().to_upper_camel_case(),
-                    sig.ident.span(),
-                );
-                let receiver = &sig
-                    .inputs
-                    .iter()
-                    .find(|item| matches!(item, syn::FnArg::Receiver(..)));
-                match receiver {
-                    Some(FnArg::Receiver(rec)) => {
-                        if matches!(rec.kind, ReceiverKind::Value) {
-                            return Error::new_spanned(
-                                rec,
-                                "can't receive function type by value. Use &self or &mut self instead",
-                            )
-                            .into_compile_error()
-                            .into();
-                        }
-                    }
-                    Some(FnArg::Typed(rec)) => {
-                        return Error::new_spanned(
-                            rec,
-                            "typed receivers are not supported. Use &self or &mut self instead",
-                        )
-                        .into_compile_error()
-                        .into();
-                    }
-                    None => {
-                        return Error::new_spanned(sig, "function needs to have a receiver")
-                            .into_compile_error()
-                            .into();
-                    }
-                }
-
-                let inputs = &sig
-                    .inputs
-                    .iter()
-                    .filter(|item| !matches!(item, syn::FnArg::Receiver(..)))
-                    .collect::<Vec<_>>();
-
-                let call_inputs = inputs
-                    .iter()
-                    .map(|arg| match arg {
-                        syn::FnArg::Receiver(_receiver) => unreachable!(),
-                        syn::FnArg::Typed(pat_type) => &pat_type.pat,
-                    })
-                    .collect::<Vec<_>>();
-
-                let return_type_name = match &sig.output {
-                    syn::ReturnType::Default => quote! {()},
-                    syn::ReturnType::Type(_, return_type_name) => quote! {#return_type_name},
-                };
-
-                let ctx = PerMessageCtx {
-                    variant_name: &variant_name,
-                    inputs,
-                    return_type_name,
-                    fn_name,
-                    call_inputs,
+                let ctx = match PerMessageCtx::from_impl_item_fn(impl_item_fn) {
+                    Ok(value) => value,
+                    Err(value) => return value,
                 };
 
                 state.add_message_variant(&ctx);
-                state.add_dispatch(&ctx, sig.asyncness.is_some());
+                state.add_dispatch(&ctx, impl_item_fn.sig.asyncness.is_some());
                 state.add_helper_call(&ctx, impl_item_fn);
 
-                if sig.asyncness.is_some() {
+                if impl_item_fn.sig.asyncness.is_some() {
                     any_async_handlers = true;
                 }
             }
