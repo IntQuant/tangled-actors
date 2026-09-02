@@ -134,11 +134,11 @@ impl ActorMakerState {
         self.helper_calls.push(
             quote! {
                 #(#doc_attrs)*
-                #visibility fn #fn_name(&self, #(#inputs),*) -> impl Future<Output=Result<#return_type_name, ::tangled_actors::ActorClosed>> {
+                #visibility fn #fn_name(&self, #(#inputs),*) -> ::tangled_actors::RpcFut<#return_type_name> {
                     let (__actor_sender, __actor_receiver) = ::tangled_actors::oneshot_channel();
                     let msg =#messages_name::#variant_name {#(#call_inputs,)* __tangled_actor_return: __actor_sender};
-                    let send_res = self.0.send(msg);
-                    async {send_res?; __actor_receiver.await.map_err(|_| ::tangled_actors::ActorClosed)}
+                    let send_res = self.0.send(msg).map_err(|_| ::tangled_actors::ActorClosed).map(|()| __actor_receiver);
+                    ::tangled_actors::RpcFut::new(send_res)
                 }
             }
         )

@@ -10,8 +10,10 @@ use tokio::{
 #[cfg(feature = "eframe")]
 pub mod eframe;
 mod link;
+mod rpcfut;
 
 pub use link::*;
+pub use rpcfut::*;
 
 /// Macro internal
 #[doc(hidden)]
@@ -35,10 +37,24 @@ impl<A: Actor> ActorCtx<A> {
     }
 }
 
-/// Error type.
-#[derive(Debug, thiserror::Error)]
+/// Error type - failed to send the message.
+#[derive(Debug, thiserror::Error, Clone)]
 #[error("actor is no longer accepting messages")]
 pub struct ActorClosed;
+
+/// Error type - sending the message succeeded, but the message handler failed to return a result (panicked) or hasn't been called at all.
+#[derive(Debug, thiserror::Error, Clone)]
+#[error("no responce from actor (actor's rpc closed return channel) ")]
+pub struct NoResponse;
+
+/// Error type - rcp call failed either because actor doesn't accept messages anymore or because it failed to return a result.
+#[derive(Debug, thiserror::Error, Clone)]
+pub enum RpcError {
+    #[error(transparent)]
+    ActorClosed(#[from] ActorClosed),
+    #[error(transparent)]
+    NoResponse(#[from] NoResponse),
+}
 
 /// Main trait implemented by actors.
 pub trait Actor: Sized + Send + 'static {
