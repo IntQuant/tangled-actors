@@ -98,10 +98,9 @@ impl ActorMakerState {
         let name = &ctx.variant_name;
         let inputs = &ctx.inputs;
         let return_type_name = &ctx.return_type_name;
-        let comma = (!inputs.is_empty()).then_some(quote! { , });
 
         self.message_variants.push(quote! {
-            #name {#(#inputs),* #comma __tangled_actor_return: ::tangled_actors::ReturnChannelSender<#return_type_name>}
+            #name {#(#inputs,)* __tangled_actor_return: ::tangled_actors::ReturnChannelSender<#return_type_name>}
         });
     }
 
@@ -109,10 +108,9 @@ impl ActorMakerState {
         let call_inputs = &ctx.inputs_types;
         let variant_name = &ctx.variant_name;
         let fn_name = ctx.fn_name;
-        let comma = (!call_inputs.is_empty()).then_some(quote! { , });
         let maybe_await = is_async.then_some(quote! {.await});
         self.dispatches.push(quote! {
-            Self::Message::#variant_name {#(#call_inputs),* #comma __tangled_actor_return} => {
+            Self::Message::#variant_name {#(#call_inputs,),* __tangled_actor_return} => {
                 let res = self.#fn_name(#(#call_inputs),*)#maybe_await;
                 let _ = __tangled_actor_return.send(res);
             }
@@ -133,13 +131,12 @@ impl ActorMakerState {
             .attrs
             .iter()
             .filter(|attr| attr.path().is_ident("doc"));
-        let comma = (!call_inputs.is_empty()).then_some(quote! { , });
         self.helper_calls.push(
             quote! {
                 #(#doc_attrs)*
                 #visibility fn #fn_name(&self, #(#inputs),*) -> impl Future<Output=Result<#return_type_name, ::tangled_actors::ActorClosed>> {
                     let (__actor_sender, __actor_receiver) = ::tangled_actors::oneshot_channel();
-                    let msg =#messages_name::#variant_name {#(#call_inputs),* #comma __tangled_actor_return: __actor_sender};
+                    let msg =#messages_name::#variant_name {#(#call_inputs,)* __tangled_actor_return: __actor_sender};
                     let send_res = self.0.send(msg);
                     async {send_res?; __actor_receiver.await.map_err(|_| ::tangled_actors::ActorClosed)}
                 }
