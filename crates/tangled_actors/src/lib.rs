@@ -55,6 +55,10 @@
 //! Additionally, the crate offers `eframe` feature for integration with [`eframe`].
 //! This allows using an eframe app as an actor.
 //!
+//! ## Limitations
+//!
+//! Generic actors aren't supported (for now).
+//!
 
 /// See crate-level docs for info.
 pub use tangled_actors_macros::make_actor;
