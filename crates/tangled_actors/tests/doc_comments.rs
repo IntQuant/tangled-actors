@@ -18,8 +18,8 @@ impl DocActor {
 #[tokio::test]
 async fn doc_commented_functions_work() -> eyre::Result<()> {
     let (link, handle) = Actor::spawn(|_link| DocActor);
-    assert_eq!(link.increment(1).await?, 42);
-    assert_eq!(link.get_state().await?, "ok");
+    assert_eq!(link.increment(1).await, 42);
+    assert_eq!(link.get_state().await, "ok");
 
     std::mem::drop(link);
     handle.await?;

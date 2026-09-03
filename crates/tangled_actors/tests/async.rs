@@ -14,7 +14,7 @@ impl TestActor {
 #[tokio::test]
 async fn main() -> eyre::Result<()> {
     let (actor_link, handle) = Actor::spawn(|_ctx| TestActor);
-    assert_eq!(actor_link.do_things(32).await??, 42);
+    assert_eq!(actor_link.do_things(32).await?, 42);
 
     mem::drop(actor_link);
     handle.await?;

@@ -30,12 +30,12 @@ async fn main() -> eyre::Result<()> {
         // Check that things work in non-async context as well
         let actor_link = actor_link.clone();
         move || {
-            let constant = actor_link.get_constant().resolve().unwrap();
-            actor_link.store_value(constant).away().unwrap();
+            let constant = actor_link.get_constant().resolve();
+            actor_link.store_value(constant).away();
         }
     });
     thr.await.unwrap();
-    assert_eq!(actor_link.get_value().await.unwrap(), 42);
+    assert_eq!(actor_link.get_value().await, 42);
 
     mem::drop(actor_link);
     handle.await?;

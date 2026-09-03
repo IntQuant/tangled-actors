@@ -12,7 +12,7 @@ impl TestActor {
     fn do_things(&self, _arg: u32) -> eyre::Result<u32> {
         let link = self.ctx.link();
         tokio::spawn(async move {
-            link.update_ret().await.unwrap();
+            link.update_ret().await;
         });
         Ok(42)
     }
@@ -27,7 +27,7 @@ impl TestActor {
 #[tokio::test]
 async fn main() -> eyre::Result<()> {
     let (actor_link, handle) = Actor::spawn(|ctx| TestActor { ctx, ret: 0 });
-    assert_eq!(actor_link.do_things(32).await??, 42);
+    assert_eq!(actor_link.do_things(32).await?, 42);
     tokio::time::sleep(Duration::from_millis(10)).await;
     let _ = actor_link.check_ret().await;
 

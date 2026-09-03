@@ -27,7 +27,7 @@ impl App for MyApp {
             ui.label(format!("Counter: {}", self.counter));
             if ui.button("Increment").clicked() {
                 // Send a message to itself to increment the counter.
-                self.ctx.link().increment().away().unwrap();
+                self.ctx.link().increment().away();
             }
             if ui.button("Increment 2").clicked() {
                 // Original function still exists in case you wish to call it.
@@ -39,7 +39,7 @@ impl App for MyApp {
                 thread::spawn(move || {
                     for _ in 0..10 {
                         thread::sleep(Duration::from_secs(1));
-                        link.increment().away().unwrap();
+                        link.increment().away();
                     }
                 });
             }
