@@ -1,6 +1,6 @@
 [package]
 name = "tangled_actors"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 
 license = "MIT OR Apache-2.0"
@@ -9,7 +9,7 @@ categories = ["concurrency", ]
 description = "Yet another macro-based actor crate"
 
 [dependencies]
-tangled_actors_macros = {version="0.1.0", path = "../tangled_actors_macros"}
+tangled_actors_macros = {version="0.2.0", path = "../tangled_actors_macros"}
 thiserror = "2.0.20"
 tokio = {version="1.53.1", features=["sync", "rt"]}
 tracing = "0.1.44"

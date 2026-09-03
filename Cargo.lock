@@ -2937,7 +2937,7 @@ dependencies = [
 
 [[package]]
 name = "tangled_actors"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "eframe",
  "eyre",
@@ -2949,7 +2949,7 @@ dependencies = [
 
 [[package]]
 name = "tangled_actors_macros"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "heck",
  "proc-macro2",
